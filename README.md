@@ -51,6 +51,30 @@ This creates:
 - `web-darwin-amd64` - macOS Intel
 - `web-linux-amd64` - Linux x86_64
 
+### Nix / NixOS
+
+If you use Nix, you can build and run directly from the flake:
+
+```bash
+# Run directly from GitHub without installing
+nix run github:chrismccord/web -- https://example.com
+
+# Run from local checkout
+nix run . -- https://example.com
+
+# Build the package
+nix build
+
+# Enter development shell (includes Go, Firefox, geckodriver)
+nix develop
+```
+
+The flake provides:
+- **`packages.default`** - The `web` binary with Firefox and geckodriver bundled in PATH
+- **`devShells.default`** - Development environment with all dependencies
+
+This eliminates the need for automatic Firefox/geckodriver downloads since Nix provides them.
+
 ## Usage Examples
 
 ```bash

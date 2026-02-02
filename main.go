@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strconv"
@@ -18,6 +19,36 @@ import (
 )
 
 const DEFAULT_TRUNCATE_AFTER = 100000
+
+// getFirefoxPath returns the path to Firefox, checking PATH first (for Nix/system installs),
+// then falling back to the downloaded location in ~/.web-firefox/
+func getFirefoxPath() string {
+	// Check PATH first (works with Nix, system Firefox, etc.)
+	if path, err := exec.LookPath("firefox"); err == nil {
+		return path
+	}
+	// Fall back to downloaded location
+	homeDir, _ := os.UserHomeDir()
+	switch runtime.GOOS {
+	case "darwin":
+		return filepath.Join(homeDir, ".web-firefox", "firefox", "Nightly.app", "Contents", "MacOS", "firefox")
+	case "linux":
+		return filepath.Join(homeDir, ".web-firefox", "firefox", "firefox")
+	}
+	return ""
+}
+
+// getGeckodriverPath returns the path to geckodriver, checking PATH first (for Nix/system installs),
+// then falling back to the downloaded location in ~/.web-firefox/
+func getGeckodriverPath() string {
+	// Check PATH first (works with Nix, system geckodriver, etc.)
+	if path, err := exec.LookPath("geckodriver"); err == nil {
+		return path
+	}
+	// Fall back to downloaded location
+	homeDir, _ := os.UserHomeDir()
+	return filepath.Join(homeDir, ".web-firefox", "geckodriver", "geckodriver")
+}
 
 type FormInput struct {
 	Name  string
@@ -68,6 +99,13 @@ func main() {
 }
 
 func ensureFirefox() error {
+	// Check if Firefox is already available (via PATH - Nix, system install, etc.)
+	if path, err := exec.LookPath("firefox"); err == nil {
+		// Firefox found in PATH, no download needed
+		_ = path
+		return nil
+	}
+
 	// Get home directory for our isolated Firefox installation
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
@@ -100,7 +138,7 @@ func ensureFirefox() error {
 		return fmt.Errorf("unsupported platform: %s", runtime.GOOS)
 	}
 
-	// Check if Firefox executable exists
+	// Check if Firefox executable exists in downloaded location
 	if _, err := os.Stat(firefoxExec); err == nil {
 		return nil
 	}
@@ -122,6 +160,13 @@ func ensureFirefox() error {
 }
 
 func ensureGeckodriver() error {
+	// Check if geckodriver is already available (via PATH - Nix, system install, etc.)
+	if path, err := exec.LookPath("geckodriver"); err == nil {
+		// Geckodriver found in PATH, no download needed
+		_ = path
+		return nil
+	}
+
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		return fmt.Errorf("could not get home directory: %v", err)
@@ -147,7 +192,7 @@ func ensureGeckodriver() error {
 		return fmt.Errorf("unsupported platform: %s", runtime.GOOS)
 	}
 
-	// Check if geckodriver exists
+	// Check if geckodriver exists in downloaded location
 	if _, err := os.Stat(geckoExec); err == nil {
 		return nil
 	}
@@ -357,21 +402,14 @@ func extractZip(src, dest string) error {
 func processRequest(config Config) (string, error) {
 	baseURL := ensureProtocol(config.URL)
 
-	// Get Firefox and geckodriver paths
+	// Get Firefox and geckodriver paths (checks PATH first, then falls back to ~/.web-firefox/)
+	firefoxExec := getFirefoxPath()
+	geckoDriverPath := getGeckodriverPath()
+
+	// Get home directory for profile storage
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		return "", fmt.Errorf("could not get home directory: %v", err)
-	}
-
-	firefoxDir := filepath.Join(homeDir, ".web-firefox")
-	geckoDriverPath := filepath.Join(firefoxDir, "geckodriver", "geckodriver")
-
-	var firefoxExec string
-	switch runtime.GOOS {
-	case "darwin":
-		firefoxExec = filepath.Join(firefoxDir, "firefox", "Nightly.app", "Contents", "MacOS", "firefox")
-	case "linux":
-		firefoxExec = filepath.Join(firefoxDir, "firefox", "firefox")
 	}
 
 	// Start geckodriver service
@@ -381,7 +419,7 @@ func processRequest(config Config) (string, error) {
 	}
 	defer service.Stop()
 
-	// Configure Firefox with profile
+	// Configure Firefox with profile (profiles always stored in ~/.web-firefox/profiles/)
 	profileDir := filepath.Join(homeDir, ".web-firefox", "profiles", config.Profile)
 	os.MkdirAll(profileDir, 0755)
 
